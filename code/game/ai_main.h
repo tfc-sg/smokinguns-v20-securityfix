@@ -267,10 +267,15 @@ typedef struct bot_state_s
 	int cmdweapon;
 	int gatling_role;
 	int gatling_role_round;
+	int sniper_role;
+	int sniper_role_round;
 	int gatling_flank_side;
 	float gatling_goal_time;
 	float gatling_hold_until;
 	bot_goal_t gatling_goal;
+	int heard_target;
+	float heard_until;
+	vec3_t heard_position;
 #endif
 	//
 	int character;									//the bot character
@@ -362,6 +367,9 @@ extern vmCvar_t bot_gatling_flank_distance;
 extern vmCvar_t bot_gatling_hold_time;
 extern vmCvar_t bot_gatling_max_team;
 extern vmCvar_t bot_gatling_debug;
+extern vmCvar_t bot_sniper_tactics;
+extern vmCvar_t bot_hearing;
+extern vmCvar_t bot_hearing_wallfire;
 extern vmCvar_t bot_br_buy_dynamite;
 extern vmCvar_t bot_br_teamplan;
 extern vmCvar_t bot_br_freeze_defenders;

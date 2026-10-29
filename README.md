@@ -19,8 +19,25 @@ security-fix build.
   they intersect solid geometry. They cannot be moved through a wall.
 - A player carrying a Gatling Gun cannot take control of a deployed Gatling,
   preventing the activate/release duplication sequence.
+- Bots retain nearby enemy sound events and investigate their last known sound
+  position. Direct-fire weapons may provide short suppression fire toward that
+  position through an obstructing wall; radial weapons are excluded.
+- One bot per team can prefer the Sharps rifle as a sniper role. The existing
+  Gatling role remains available independently.
 
 The changes are in `code/game/g_weapon.c` and `code/game/g_active.c`.
+
+### Bot hearing and roles
+
+```cfg
+set bot_hearing 1
+set bot_hearing_wallfire 1
+set bot_sniper_tactics 1
+set bot_gatling_tactics 1
+```
+
+`bot_hearing_wallfire 0` retains sound investigation but disables
+sound-directed suppression fire.
 Some of the major features currently implemented are:
 
   * SDL backend

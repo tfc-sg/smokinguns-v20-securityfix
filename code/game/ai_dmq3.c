@@ -234,6 +234,32 @@ static qboolean BotHasUsableGatling(bot_state_t *bs) {
 		(bs->cur_ps.ammo[WP_GATLING] > 0 || bs->cur_ps.ammo[WP_GATLING_CLIP] > 0);
 }
 
+/* Assign one long-range specialist per team after the Gatling role. */
+static qboolean BotSniperRole(bot_state_t *bs) {
+	int i, rank, team;
+
+	if (!bot_sniper_tactics.integer) return qfalse;
+	if (bs->sniper_role_round == g_round + 1)
+		return bs->sniper_role > 0;
+
+	team = BotTeam(bs);
+	rank = 0;
+	for (i = 0; i < bs->client; i++) {
+		if (!(g_entities[i].r.svFlags & SVF_BOT)) continue;
+		if (level.clients[i].pers.connected != CON_CONNECTED) continue;
+		if (level.clients[i].sess.sessionTeam == team) rank++;
+	}
+	bs->sniper_role = rank == bot_gatling_max_team.integer ? 1 : -1;
+	bs->sniper_role_round = g_round + 1;
+	return bs->sniper_role > 0;
+}
+
+static qboolean BotHasUsableSniperWeapon(bot_state_t *bs) {
+	return (bs->cur_ps.stats[STAT_WEAPONS] & (1 << WP_SHARPS)) &&
+		(bs->cur_ps.ammo[WP_SHARPS] ||
+		 bs->cur_ps.ammo[bg_weaponlist[WP_SHARPS].clip]);
+}
+
 static int BotChooseBestNonGatlingWeapon(playerState_t *ps, int oldweapon) {
 	int i;
 	for (i = WP_MOLOTOV; i > 0; i--) {
@@ -323,6 +349,7 @@ qboolean EntityCarriesFlag(aas_entityinfo_t *entinfo) {
 	if ( entinfo->powerups & ( 1 << PW_NEUTRALFLAG ) )
 		return qtrue;
 #endif
+
 	return qfalse;
 }
 #endif
@@ -1758,6 +1785,8 @@ void BotChooseWeapon(bot_state_t *bs) {
 			(bs->cur_ps.stats[STAT_GATLING_MODE] ||
 			 (bs->gatling_hold_until > FloatTime() && bs->enemy >= 0)))
 			newweaponnum = WP_GATLING;
+		else if (BotSniperRole(bs) && BotHasUsableSniperWeapon(bs))
+			newweaponnum = WP_SHARPS;
 		else
 #endif
 		{
@@ -3900,6 +3929,19 @@ int BotFindEnemy(bot_state_t *bs, int curenemy) {
 		return qtrue;
 	}
 #endif
+
+#ifdef SMOKINGUNS
+	/* A recent sound is a lead to investigate, not direct visual knowledge. */
+	if (curenemy < 0 && bs->heard_until > FloatTime() &&
+		bs->heard_target >= 0 && bs->heard_target < MAX_CLIENTS &&
+		!BotSameTeam(bs, bs->heard_target)) {
+		bs->enemy = bs->heard_target;
+		bs->enemysight_time = FloatTime() - 2.0f;
+		bs->enemyvisible_time = FloatTime();
+		AIEnter_Battle_Chase(bs, "heard enemy: investigate sound");
+		return qtrue;
+	}
+#endif
 	return qfalse;
 }
 
@@ -4161,6 +4203,14 @@ void BotAimAtEnemy(bot_state_t *bs) {
 	//
 	//BotAI_Print(PRT_MESSAGE, "client %d: aiming at client %d\n", bs->entitynum, bs->enemy);
 	//
+#ifdef SMOKINGUNS
+	if (bs->heard_target == bs->enemy && bs->heard_until > FloatTime()) {
+		VectorSubtract(bs->heard_position, bs->eye, dir);
+		vectoangles(dir, bs->ideal_viewangles);
+		VectorCopy(bs->heard_position, bs->aimtarget);
+		return;
+	}
+#endif
 	aim_skill = trap_Characteristic_BFloat(bs->character, CHARACTERISTIC_AIM_SKILL, 0, 1);
 	aim_accuracy = trap_Characteristic_BFloat(bs->character, CHARACTERISTIC_AIM_ACCURACY, 0, 1);
 	//
@@ -4789,11 +4839,16 @@ void BotCheckAttack(bot_state_t *bs) {
 	vec3_t mins = {-8, -8, -8}, maxs = {8, 8, 8};
 
 #ifdef SMOKINGUNS
+	qboolean heardTarget;
 	if((bs->flags & BFL_RELOAD) || (bs->flags & BFL_RELOAD2))
 		return;
 #endif
 
 	attackentity = bs->enemy;
+#ifdef SMOKINGUNS
+	heardTarget = bot_hearing_wallfire.integer &&
+		bs->heard_target == attackentity && bs->heard_until > FloatTime();
+#endif
 	/* Team assignments can change before stale enemy state is cleared. */
 	if (attackentity < 0 || attackentity >= MAX_GENTITIES)
 		return;
@@ -4860,15 +4915,20 @@ void BotCheckAttack(bot_state_t *bs) {
 #ifndef SMOKINGUNS
 	if (!InFieldOfVision(bs->viewangles, fov, angles))
 #else
-	if (!InFieldOfVision(bs->viewangles, fov, angles, attackentity))
+	if (!heardTarget && !InFieldOfVision(bs->viewangles, fov, angles, attackentity))
 #endif
 		return;
 	BotAI_Trace(&bsptrace, bs->eye, NULL, NULL, bs->aimtarget, bs->client, CONTENTS_SOLID|CONTENTS_PLAYERCLIP);
-	if (bsptrace.fraction < 1 && bsptrace.ent != attackentity)
+	if (!heardTarget && bsptrace.fraction < 1 && bsptrace.ent != attackentity)
 		return;
 
 	//get the weapon info
 	trap_BotGetWeaponInfo(bs->ws, bs->weaponnum, &wi);
+#ifdef SMOKINGUNS
+	/* Sound-based suppression is intentionally limited to direct-fire weapons. */
+	if (heardTarget && (wi.proj.damagetype & DAMAGETYPE_RADIAL))
+		return;
+#endif
 	/* Do not launch radial weapons into a group containing team-mates. */
 	if (wi.proj.damagetype & DAMAGETYPE_RADIAL) {
 		int teammate;
@@ -6351,6 +6411,11 @@ void BotCheckEvents(bot_state_t *bs, entityState_t *state) {
 	char buf[128];
 #ifndef SMOKINGUNS
 	aas_entityinfo_t entinfo;
+#else
+	float hearRange, hearDistance;
+	qboolean soundEvent;
+	vec3_t soundOrigin, soundDir;
+	bsp_trace_t soundTrace;
 #endif
 
 	//NOTE: this sucks, we're accessing the gentity_t directly
@@ -6366,6 +6431,63 @@ void BotCheckEvents(bot_state_t *bs, entityState_t *state) {
 	else {
 		event = state->event & ~EV_EVENT_BITS;
 	}
+
+#ifdef SMOKINGUNS
+	/*
+	 * Convert player events into short-lived spatial sound memories.  Sound
+	 * may pass through one wall at a strongly reduced range, but the bot only
+	 * receives the event origin, never a live position update through walls.
+	 */
+	if (bot_hearing.integer && state->number >= 0 && state->number < MAX_CLIENTS &&
+		state->number != bs->client && !BotSameTeam(bs, state->number) &&
+		level.clients[state->number].pers.connected == CON_CONNECTED) {
+		soundEvent = qtrue;
+		hearRange = 700.0f;
+		switch (event) {
+			case EV_FIRE_WEAPON:
+			case EV_FIRE_WEAPON_DELAY:
+			case EV_FIRE_WEAPON2:
+			case EV_ALT_FIRE_WEAPON:
+				hearRange = 1800.0f;
+				break;
+			case EV_FALL_MEDIUM:
+			case EV_FALL_FAR:
+			case EV_BUILD_TURRET:
+				hearRange = 1200.0f;
+				break;
+			case EV_FOOTSTEP:
+			case EV_FOOTSTEP_METAL:
+			case EV_FOOTSTEP_CLOTH:
+			case EV_FOOTSTEP_GRASS:
+			case EV_FOOTSTEP_SNOW:
+			case EV_FOOTSTEP_SAND:
+			case EV_FOOTSPLASH:
+			case EV_FOOTWADE:
+			case EV_SWIM:
+			case EV_JUMP:
+				break;
+			default:
+				soundEvent = qfalse;
+				break;
+		}
+		if (soundEvent) {
+			VectorCopy(g_entities[state->number].r.currentOrigin, soundOrigin);
+			soundOrigin[2] += 16;
+			VectorSubtract(soundOrigin, bs->eye, soundDir);
+			hearDistance = VectorLength(soundDir);
+			BotAI_Trace(&soundTrace, bs->eye, NULL, NULL, soundOrigin,
+				bs->client, CONTENTS_SOLID | CONTENTS_PLAYERCLIP);
+			if (soundTrace.fraction < 1.0f && soundTrace.ent != state->number)
+				hearRange *= 0.40f;
+			if (hearDistance <= hearRange) {
+				bs->heard_target = state->number;
+				VectorCopy(soundOrigin, bs->heard_position);
+				bs->heard_until = FloatTime() +
+					(event == EV_FIRE_WEAPON ? 1.8f : 0.9f);
+			}
+		}
+	}
+#endif
 	//
 	switch(event) {
 		//client obituary event
