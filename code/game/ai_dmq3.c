@@ -4544,6 +4544,7 @@ void BotCheckBuy(bot_state_t *bs){
 	gitem_t *item;
 	qboolean bought = qfalse;
 	qboolean gatlingRole, gatlingBought = qfalse;
+	qboolean sniperRole, sniperBought = qfalse;
 	
 
 	if(g_gametype.integer >= GT_RTP){
@@ -4567,6 +4568,7 @@ void BotCheckBuy(bot_state_t *bs){
 
 	money = bs->cur_ps.stats[STAT_MONEY];
 	gatlingRole = BotGatlingRole(bs);
+	sniperRole = BotSniperRole(bs);
 	bs->flags &= ~BFL_ESCAPE;
 	bs->flags &= ~BFL_AVOID;
 
@@ -4606,6 +4608,17 @@ void BotCheckBuy(bot_state_t *bs){
 		}
 	}
 
+	/* The designated marksman buys a Sharps rifle before ordinary weapons. */
+	if(sniperRole &&
+		!(bs->cur_ps.stats[STAT_WEAPONS] & (1 << WP_SHARPS))){
+		item = BG_FindItemForWeapon(WP_SHARPS);
+		if(item && item->classname && item->prize <= money){
+			trap_EA_Command(bs->client, va("cg_buy %s", item->classname));
+			money -= item->prize;
+			bought = sniperBought = qtrue;
+		}
+	}
+
 	// first try to buy a weapon
 	for(i=1, mark = -1, mark2 = -1; ; i++){
 		gitem_t *temp;
@@ -4627,6 +4640,8 @@ void BotCheckBuy(bot_state_t *bs){
 			item->giType != IT_WEAPON)
 			continue;
 		if(gatlingRole && (gatlingBought || item->giTag != WP_GATLING ||
+			item->prize > money)) continue;
+		if(sniperRole && (sniperBought || item->giTag != WP_SHARPS ||
 			item->prize > money)) continue;
 
 
