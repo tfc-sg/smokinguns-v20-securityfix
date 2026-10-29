@@ -1,0 +1,217 @@
+########################################################################
+# Based on ioQuake3 commit see https://github.com/ioquake/ioq3
+IOQ3_GITHUB_COMMIT = b9b67036f3
+########################################################################
+ifeq ($(BUILD_CLIENT),)
+  # Build client by default
+  BUILD_CLIENT     = 1
+endif
+ifeq ($(BUILD_CLIENT_SMP),)
+  # Don't build SMP by default, it is still not supported by SDL
+  BUILD_CLIENT_SMP = 0
+endif
+ifeq ($(BUILD_SERVER),)
+  # Build server by default
+  BUILD_SERVER     = 1
+endif
+ifeq ($(BUILD_GAME_SO),)
+  # Don't build binary game by default
+  BUILD_GAME_SO    = 0
+endif
+ifeq ($(BUILD_GAME_QVM),)
+  # Build QVM game by default
+  BUILD_GAME_QVM   = 1
+endif
+ifeq ($(FRAMEBUFFER_AND_GLSL_SUPPORT),)
+  # Build renderer with framebuffer and GLSL support by default
+  FRAMEBUFFER_AND_GLSL_SUPPORT = 1
+endif
+ifeq ($(BUILD_SDK_DIFF),)
+  BUILD_SDK_DIFF   = 1
+endif
+ifeq ($(USE_CODEC_VORBIS),)
+  USE_CODEC_VORBIS = 1
+endif
+ifeq ($(USE_FREETYPE),)
+  # FIXME: Build with Freetype support by default but not on mingw32 build
+  ifeq ($(PLATFORM),mingw32)
+    USE_FREETYPE   = 0
+  else
+    USE_FREETYPE   = 1
+  endif
+endif
+ifndef ($(BUILD_RENDERER_REND2),)
+  BUILD_RENDERER_REND2 = 1
+endif
+########################################################################
+# Don't modify the following or the build will just be broken
+BUILD_STANDALONE   = 1
+BUILD_BASEGAME     = 1
+BUILD_MISSIONPACK  = 0
+SDK_GAME           = Smokin' Guns
+BASEGAME           = smokinguns
+CLIENTBIN          = smokinguns
+SERVERBIN          = smokinguns_dedicated
+########################################################################
+# Version & Release defaults
+ifndef VERSION
+  VERSION          = 1.2dev
+endif
+ifndef RELEASE
+  RELEASE          = $(shell date +"%Y%m%d")
+endif
+########################################################################
+# Here some convenient defaults
+ifndef COPYDIR
+  COPYDIR          = ./install
+endif
+ifndef BUILD_DIR
+  BUILD_DIR        = ./build
+endif
+# Packagers can uncomment and change DEFAULT_BASEDIR to define a system
+# installation path for the game. Otherwise, you can start the game with
+# a script setting SG_BASEPATH environment to the path you would prefer
+#DEFAULT_BASEDIR = /usr/share/games/smokinguns
+
+# BASEGAME_CFLAGS should only contain -D options dedicated to the game to keep
+# it not compiler dependent. It will be used by cc but also q3lcc in any build.
+BASEGAME_CFLAGS = -DSMOKINGUNS -DPRODUCT_RELEASE=\"$(RELEASE)\" -DPRODUCT_VERSION=\"$(VERSION)\"
+
+# Use -DSYS_FOPEN_NOCASE if you are MODing under Unix (content out of PK3)
+#BASEGAME_CFLAGS += -DSYS_FOPEN_NOCASE
+#BASEGAME_CFLAGS += -DFS_MISSING -DSYS_FOPEN_NOCASE
+
+# Tequila: Fixed svn support for file using Q3_VERSION define
+SDK_OBJ_WITH_VERSION_SUPPORT = \
+	$(B)/ded/common.o \
+	$(B)/ded/sys_main.o \
+	$(B)/ded/sys_unix.o \
+	$(B)/ded/sys_win32.o \
+	$(B)/client/common.o \
+	$(B)/client/cl_console.o \
+	$(B)/client/cl_curl.o \
+	$(B)/client/sys_main.o \
+	$(B)/client/sys_unix.o \
+	$(B)/client/sys_win32.o \
+	$(B)/$(BASEGAME)/game/g_main.o \
+	$(B)/$(BASEGAME)/game/g_main.asm \
+	$(B)/$(BASEGAME)/cgame/cg_main.o \
+	$(B)/$(BASEGAME)/cgame/cg_main.asm \
+	$(B)/$(BASEGAME)/ui/ui_main.o \
+	$(B)/$(BASEGAME)/ui/ui_main.asm
+
+#############################################################################
+## SMOKINGUNS EXE TUNING
+#############################################################################
+
+USE_Q3OBJ_ADDON = 0
+SDK_Q3OBJ_ADDON = 
+
+#############################################################################
+## SMOKINGUNS DEDICATED TUNING
+#############################################################################
+
+USE_Q3DOBJ_ADDON = 1
+SDK_Q3DOBJ_ADDON = \
+	$(B)/ded/md5.o
+
+#############################################################################
+## SMOKINGUNS CGAME
+#############################################################################
+
+USE_SDK_Q3CGOBJ = 1
+SDK_Q3CGOBJ = \
+  $(B)/$(BASEGAME)/cgame/cg_main.o \
+  $(B)/$(BASEGAME)/cgame/bg_misc.o \
+  $(B)/$(BASEGAME)/cgame/bg_pmove.o \
+  $(B)/$(BASEGAME)/cgame/bg_slidemove.o \
+  $(B)/$(BASEGAME)/cgame/bg_lib.o \
+  $(B)/$(BASEGAME)/cgame/cg_consolecmds.o \
+  $(B)/$(BASEGAME)/cgame/cg_newdraw.o \
+  $(B)/$(BASEGAME)/cgame/cg_draw.o \
+  $(B)/$(BASEGAME)/cgame/cg_drawtools.o \
+  $(B)/$(BASEGAME)/cgame/cg_effects.o \
+  $(B)/$(BASEGAME)/cgame/cg_ents.o \
+  $(B)/$(BASEGAME)/cgame/cg_event.o \
+  $(B)/$(BASEGAME)/cgame/cg_info.o \
+  $(B)/$(BASEGAME)/cgame/cg_localents.o \
+  $(B)/$(BASEGAME)/cgame/cg_marks.o \
+  $(B)/$(BASEGAME)/cgame/cg_players.o \
+  $(B)/$(BASEGAME)/cgame/cg_playerstate.o \
+  $(B)/$(BASEGAME)/cgame/cg_predict.o \
+  $(B)/$(BASEGAME)/cgame/cg_servercmds.o \
+  $(B)/$(BASEGAME)/cgame/cg_snapshot.o \
+  $(B)/$(BASEGAME)/cgame/cg_view.o \
+  $(B)/$(BASEGAME)/cgame/cg_weapons.o \
+  \
+  $(B)/$(BASEGAME)/ui/ui_shared.o \
+  \
+  $(B)/$(BASEGAME)/qcommon/q_math.o \
+  $(B)/$(BASEGAME)/qcommon/q_shared.o \
+  \
+  $(B)/$(BASEGAME)/cgame/cg_sg_utils.o \
+  $(B)/$(BASEGAME)/cgame/cg_unlagged.o
+
+#############################################################################
+## SMOKINGUNS GAME
+#############################################################################
+
+USE_SDK_Q3GOBJ = 1
+SDK_Q3GOBJ = \
+  $(B)/$(BASEGAME)/game/g_main.o \
+  $(B)/$(BASEGAME)/game/ai_chat.o \
+  $(B)/$(BASEGAME)/game/ai_cmd.o \
+  $(B)/$(BASEGAME)/game/ai_dmnet.o \
+  $(B)/$(BASEGAME)/game/ai_dmq3.o \
+  $(B)/$(BASEGAME)/game/ai_main.o \
+  $(B)/$(BASEGAME)/game/ai_team.o \
+  $(B)/$(BASEGAME)/game/ai_vcmd.o \
+  $(B)/$(BASEGAME)/game/bg_misc.o \
+  $(B)/$(BASEGAME)/game/bg_pmove.o \
+  $(B)/$(BASEGAME)/game/bg_slidemove.o \
+  $(B)/$(BASEGAME)/game/bg_lib.o \
+  $(B)/$(BASEGAME)/game/g_active.o \
+  $(B)/$(BASEGAME)/game/g_bot.o \
+  $(B)/$(BASEGAME)/game/g_client.o \
+  $(B)/$(BASEGAME)/game/g_cmds.o \
+  $(B)/$(BASEGAME)/game/g_combat.o \
+  $(B)/$(BASEGAME)/game/g_items.o \
+  $(B)/$(BASEGAME)/game/g_mem.o \
+  $(B)/$(BASEGAME)/game/g_misc.o \
+  $(B)/$(BASEGAME)/game/g_missile.o \
+  $(B)/$(BASEGAME)/game/g_mover.o \
+  $(B)/$(BASEGAME)/game/g_session.o \
+  $(B)/$(BASEGAME)/game/g_spawn.o \
+  $(B)/$(BASEGAME)/game/g_svcmds.o \
+  $(B)/$(BASEGAME)/game/g_target.o \
+  $(B)/$(BASEGAME)/game/g_team.o \
+  $(B)/$(BASEGAME)/game/g_trigger.o \
+  $(B)/$(BASEGAME)/game/g_utils.o \
+  $(B)/$(BASEGAME)/game/g_weapon.o \
+  \
+  $(B)/$(BASEGAME)/qcommon/q_math.o \
+  $(B)/$(BASEGAME)/qcommon/q_shared.o \
+  \
+  $(B)/$(BASEGAME)/game/g_sg_utils.o \
+  $(B)/$(BASEGAME)/game/g_hit.o \
+  $(B)/$(BASEGAME)/game/g_unlagged.o
+
+#############################################################################
+## SMOKINGUNS UI
+#############################################################################
+
+USE_UIDIR       = 1
+USE_SDK_Q3UIOBJ = 1
+SDK_Q3UIOBJ = \
+  $(B)/$(BASEGAME)/ui/ui_main.o \
+  $(B)/$(BASEGAME)/ui/ui_atoms.o \
+  $(B)/$(BASEGAME)/ui/ui_gameinfo.o \
+  $(B)/$(BASEGAME)/ui/ui_players.o \
+  \
+  $(B)/$(BASEGAME)/ui/bg_misc.o \
+  $(B)/$(BASEGAME)/ui/bg_lib.o \
+  \
+  $(B)/$(BASEGAME)/ui/ui_shared.o \
+  \
+  $(B)/$(BASEGAME)/qcommon/q_math.o \
+  $(B)/$(BASEGAME)/qcommon/q_shared.o

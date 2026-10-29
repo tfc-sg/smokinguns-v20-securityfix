@@ -1,0 +1,12 @@
+# Generated build products
+build*/
+*.qvm
+*.pk3
+*.zip
+*.exe
+*.dll
+*.so
+
+# Local configuration and logs
+*.cfg.local
+*.log
