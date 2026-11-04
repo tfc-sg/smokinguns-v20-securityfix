@@ -97,12 +97,14 @@ whole overlay. Scale range: 0.125..8. Model paths must start with `models/`.
 ```sh
 sh tests/run_powerups.sh
 sh tests/run_close_range.sh
+sh tests/run_bot_hearing.sh
 python3 -m unittest discover -s tests -p test_powerup_models.py -v
 ```
 
 The 52 powerups checks compile production parser/state functions with GCC
 undefined-behavior/division sanitizers and mocked engine services. The 29
-close-range checks and six MD3 transformation tests are separate. Optional
+close-range checks and six MD3 transformation tests are separate. Another 23 checks cover heard-goal
+selection and bounded node-switch recording/dumping. Optional
 paths passed to run_powerups.sh additionally validate real overlay files.
 
 Of 53 active input `.txt` files inspected on the test server, 50 pass structural
@@ -130,3 +132,19 @@ module before installing on the test server. Disabling `g_mapPowerups` restores
 normal BSP entities on the next map load. Binary rollback means restoring the
 saved module(s), removing the added model PK3 if no longer needed, and fully
 reloading the game/server. Keep the original powerups files unchanged.
+
+## Hearing state loop found during sustained testing
+
+The existing hearing fallback in BotFindEnemy used to return success for a sound
+and enter chase. Its callers immediately promoted the same target to fight,
+which returned to seek because the target was still hidden. Repeating transitions
+also exceeded the node-history buffer: a node may record multiple transitions per
+iteration. This was reproduced with four bots before release.
+
+Sound investigation now runs as a separate reachable navigation goal in seek
+states and yields the frame after selecting chase. BotFindEnemy retains its
+visual-search contract. Both history writes and dumps have their own hard bound;
+Snapshot entity numbers are checked before direct array access.
+AI-budget exhaustion clears the stale lead and recovers rather than overrunning
+the buffer. Diagnostic dumps are throttled. Existing sound-directed direct-fire
+suppression remains available in chase.

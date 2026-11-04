@@ -134,10 +134,10 @@ void BotDumpNodeSwitches(bot_state_t *bs) {
 
 	ClientName(bs->client, netname, sizeof(netname));
 	BotAI_Print(PRT_MESSAGE, "%s at %1.1f switched more than %d AI nodes\n", netname, FloatTime(), MAX_NODESWITCHES);
-	for (i = 0; i < numnodeswitches; i++) {
+	for (i = 0; i < numnodeswitches && i < MAX_NODESWITCHES; i++) {
 		BotAI_Print(PRT_MESSAGE, "%s", nodeswitch[i]);
 	}
-	BotAI_Print(PRT_FATAL, "");
+	BotAI_Print(PRT_WARNING, "AI node budget exhausted; recovering next frame\n");
 }
 
 /*
@@ -148,6 +148,9 @@ BotRecordNodeSwitch
 void BotRecordNodeSwitch(bot_state_t *bs, char *node, char *str, char *s) {
 	char netname[MAX_NETNAME];
 
+	/* One AI node can record several transitions in a single iteration. */
+	if (numnodeswitches < 0 || numnodeswitches >= MAX_NODESWITCHES) return;
+
 	ClientName(bs->client, netname, sizeof(netname));
 	Com_sprintf(nodeswitch[numnodeswitches], 144, "%s at %2.1f entered %s: %s from %s\n", netname, FloatTime(), node, str, s);
 #ifdef DEBUG
@@ -157,6 +160,52 @@ void BotRecordNodeSwitch(bot_state_t *bs, char *node, char *str, char *s) {
 #endif //DEBUG
 	numnodeswitches++;
 }
+
+#ifdef SMOKINGUNS
+/* Hearing supplies a navigation goal, never the visual-success return value
+ * of BotFindEnemy. Otherwise callers immediately promote chase to fight and
+ * bounce back to seek when the same enemy is still behind a wall. */
+static qboolean BotHeardGoal(bot_state_t *bs, bot_goal_t *goal) {
+    gentity_t *target;
+    vec3_t delta;
+    int area;
+    if (!bot_hearing.integer || bs->heard_until <= FloatTime() ||
+            bs->heard_target < 0 || bs->heard_target >= MAX_CLIENTS ||
+            bs->heard_target == bs->client ||
+            BotSameTeam(bs, bs->heard_target)) return qfalse;
+    target = &g_entities[bs->heard_target];
+    if (!target->inuse || !target->client || target->health <= 0 ||
+            target->client->pers.connected != CON_CONNECTED) return qfalse;
+    VectorSubtract(bs->heard_position, bs->origin, delta);
+    if (VectorLengthSquared(delta) <= 32 * 32) {
+        bs->heard_until = 0;
+        return qfalse;
+    }
+    area = BotPointAreaNum(bs->heard_position);
+    if (!area || !trap_AAS_AreaReachability(area)) {
+        bs->heard_until = 0;
+        return qfalse;
+    }
+    memset(goal, 0, sizeof(*goal));
+    goal->entitynum = bs->heard_target;
+    goal->areanum = area;
+    VectorCopy(bs->heard_position, goal->origin);
+    return qtrue;
+}
+
+static qboolean BotInvestigateHeardGoal(bot_state_t *bs) {
+    bot_goal_t goal;
+    if (bs->flags & (BFL_AVOID | BFL_ESCAPE)) return qfalse;
+    if (!BotHeardGoal(bs, &goal)) return qfalse;
+    bs->enemy = goal.entitynum;
+    VectorCopy(goal.origin, bs->lastenemyorigin);
+    bs->lastenemyareanum = goal.areanum;
+    bs->enemysight_time = FloatTime() - 2;
+    bs->enemydeath_time = 0;
+    AIEnter_Battle_Chase(bs, "heard enemy: investigate sound");
+    return qtrue;
+}
+#endif
 
 /*
 ==================
@@ -3139,6 +3188,9 @@ int AINode_Seek_NBG(bot_state_t *bs) {
 #endif
 		}
 	}
+#ifdef SMOKINGUNS
+	else if (BotInvestigateHeardGoal(bs)) return qtrue;
+#endif
 	return qtrue;
 }
 
@@ -3248,6 +3300,9 @@ int AINode_Seek_LTG(bot_state_t *bs)
 			return qfalse;
 		}
 	}
+#ifdef SMOKINGUNS
+	if (BotInvestigateHeardGoal(bs)) return qtrue;
+#endif
 	//
 	BotTeamGoals(bs, qfalse);
 #ifdef DEBUG
@@ -3747,7 +3802,15 @@ int AINode_Battle_Chase(bot_state_t *bs)
 	//if the weapon is used for the bot movement
 	if (moveresult.flags & MOVERESULT_MOVEMENTWEAPON) bs->weaponnum = moveresult.weapon;
 	//if the bot is in the area the enemy was last seen in
-	if (bs->areanum == bs->lastenemyareanum) bs->chase_time = 0;
+#ifdef SMOKINGUNS
+    if (bs->heard_target == bs->enemy && bs->heard_until > FloatTime()) {
+        if (bot_hearing_wallfire.integer && !(moveresult.flags & MOVERESULT_MOVEMENTWEAPON)) {
+            BotAimAtEnemy(bs);
+            BotCheckAttack(bs);
+        }
+    } else
+#endif
+    if (bs->areanum == bs->lastenemyareanum) bs->chase_time = 0;
 	//if the bot wants to retreat (the bot could have been damage during the chase)
 #ifndef SMOKINGUNS
 	if (BotWantsToRetreat(bs)) {

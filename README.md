@@ -55,6 +55,15 @@ They do not replace a live gameplay test.
 For a server-side diagnostic, `g_debugWeapon 2` logs recovered hits as
 `Weapon_Trace: inside-client hit ...`. Restore `g_debugWeapon 0` afterwards.
 
+### Bot hearing stability
+
+Sound-only leads now select a chase goal without returning a visual enemy-search
+success. This prevents seek/chase/fight cycles when an enemy remains behind a
+wall. Heard goals are checked for reachable areas and consumed on arrival.
+Node-switch recording and dumps are bounded independently of the AI iteration
+budget; exhaustion yields to the next frame with throttled diagnostics.
+Hearing, optional direct-fire suppression, and sniper/Gatling roles remain enabled.
+
 ### Map-specific powerups
 
 Map startup can apply `powerups/<mapname>.txt` overlays after the BSP entities

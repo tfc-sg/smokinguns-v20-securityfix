@@ -3930,18 +3930,7 @@ int BotFindEnemy(bot_state_t *bs, int curenemy) {
 	}
 #endif
 
-#ifdef SMOKINGUNS
-	/* A recent sound is a lead to investigate, not direct visual knowledge. */
-	if (curenemy < 0 && bs->heard_until > FloatTime() &&
-		bs->heard_target >= 0 && bs->heard_target < MAX_CLIENTS &&
-		!BotSameTeam(bs, bs->heard_target)) {
-		bs->enemy = bs->heard_target;
-		bs->enemysight_time = FloatTime() - 2.0f;
-		bs->enemyvisible_time = FloatTime();
-		AIEnter_Battle_Chase(bs, "heard enemy: investigate sound");
-		return qtrue;
-	}
-#endif
+
 	return qfalse;
 }
 
@@ -6433,6 +6422,9 @@ void BotCheckEvents(bot_state_t *bs, entityState_t *state) {
 	bsp_trace_t soundTrace;
 #endif
 
+	/* Validate snapshot numbers before indexing either entity array. */
+	if (!bs || !state || state->number < 0 || state->number >= MAX_GENTITIES) return;
+
 	//NOTE: this sucks, we're accessing the gentity_t directly
 	//but there's no other fast way to do it right now
 	if (bs->entityeventTime[state->number] == g_entities[state->number].eventTime) {
@@ -7050,11 +7042,21 @@ void BotDeathmatchAI(bot_state_t *bs, float thinktime) {
 	if (!bs->inuse) return;
 	//if the bot executed too many AI nodes
 	if (i >= MAX_NODESWITCHES) {
-		trap_BotDumpGoalStack(bs->gs);
-		trap_BotDumpAvoidGoals(bs->gs);
-		BotDumpNodeSwitches(bs);
-		ClientName(bs->client, name, sizeof(name));
-		BotAI_Print(PRT_ERROR, "%s at %1.1f switched more than %d AI nodes\n", name, FloatTime(), MAX_NODESWITCHES);
+        static float nextWarning[MAX_CLIENTS];
+        if (FloatTime() >= nextWarning[bs->client]) {
+            trap_BotDumpGoalStack(bs->gs);
+            trap_BotDumpAvoidGoals(bs->gs);
+            BotDumpNodeSwitches(bs);
+            ClientName(bs->client, name, sizeof(name));
+            BotAI_Print(PRT_ERROR, "%s at %1.1f switched more than %d AI nodes\n", name, FloatTime(), MAX_NODESWITCHES);
+            nextWarning[bs->client] = FloatTime() + 5;
+        }
+#ifdef SMOKINGUNS
+        bs->heard_until = 0;
+#endif
+        bs->enemy = -1;
+        bs->ltg_time = 0;
+        AIEnter_Seek_LTG(bs, "BotDeathmatchAI: node budget recovery");
 	}
 	//
 	bs->lastframe_health = bs->inventory[INVENTORY_HEALTH];

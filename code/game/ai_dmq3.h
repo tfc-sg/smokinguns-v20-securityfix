@@ -125,6 +125,9 @@ qboolean BotIsARealEnemy(int client, int other);
 #endif
 //returns true and sets the .enemy field when an enemy is found
 int BotFindEnemy(bot_state_t *bs, int curenemy);
+#ifdef SMOKINGUNS
+int BotBRCarryingMoneyBag(bot_state_t *bs);
+#endif
 //returns a roam goal
 void BotRoamGoal(bot_state_t *bs, vec3_t goal);
 //returns entity visibility in the range [0, 1]
