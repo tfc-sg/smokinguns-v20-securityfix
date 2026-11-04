@@ -767,6 +767,7 @@ void G_InitGame( int levelTime, int randomSeed, int restart ) {
 
 	//check if there is a known prefix
 	prefix_gametype = BG_MapPrefix(map, g_gametype.integer);
+	prefix_gametype = G_PowerupGametype(prefix_gametype);
 
 	trap_Cvar_Set("g_gametype", va("%i", prefix_gametype));
 	g_gametype.integer = prefix_gametype;

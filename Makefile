@@ -2396,6 +2396,7 @@ Q3GOBJ_ = \
   $(B)/$(BASEGAME)/game/g_mover.o \
   $(B)/$(BASEGAME)/game/g_session.o \
   $(B)/$(BASEGAME)/game/g_spawn.o \
+  $(B)/$(BASEGAME)/game/g_powerups.o \
   $(B)/$(BASEGAME)/game/g_svcmds.o \
   $(B)/$(BASEGAME)/game/g_target.o \
   $(B)/$(BASEGAME)/game/g_team.o \

@@ -1481,6 +1481,11 @@ void SP_func_breakable (gentity_t *ent){
 	char	*s;
 	gitem_t	*item;
 
+	if (ent->mapPowerup && ent->model && ent->model[0] != '*') {
+		G_SpawnPowerupBreakable(ent);
+		return;
+	}
+
 	// look for a manually-set-type
 	if(ent->spawnflags){
 

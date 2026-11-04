@@ -251,6 +251,10 @@ struct gentity_s {
 	int			animationStart;
 	int			animationEnd;
 	float		animationFPS;
+	/* Server-only map patch state. */
+	qboolean mapPowerup;
+	int powerupHealth;
+	gentity_t *powerupPeer;
 #endif
 };
 
@@ -1444,6 +1448,13 @@ int G_HitModelCheck(hit_data_t *data, vec3_t origin,
 				   vec3_t start, vec3_t end);
 int G_HitModelCheckSegment(gentity_t *ent, vec3_t start, vec3_t end,
         float *fraction);
+void G_SpawnGEntityFromSpawnVars(void);
+int G_PowerupGametype(int prefixGametype);
+void G_LoadPowerupEntities(void);
+qboolean G_SpawnPowerupEntity(gentity_t *ent);
+void G_SpawnPowerupBreakable(gentity_t *ent);
+qboolean G_PowerupItemBlocked(gentity_t *ent);
+void Svcmd_Powerups_f(void);
 qboolean G_LoadHitFiles( hit_data_t *hit_data);
 void G_RunLerpFrame( lerpFrame_t *lf, int newAnimation, float speedScale);
 void G_ClearLerpFrame( lerpFrame_t *lf, int animationNumber);

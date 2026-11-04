@@ -10,3 +10,7 @@ build*/
 # Local configuration and logs
 *.cfg.local
 *.log
+
+# Python helper caches
+__pycache__/
+*.pyc

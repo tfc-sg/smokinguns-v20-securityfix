@@ -338,6 +338,11 @@ qboolean G_CallSpawn( gentity_t *ent ) {
 		return qfalse;
 	}
 
+	#ifdef SMOKINGUNS
+	if (G_SpawnPowerupEntity(ent))
+		return qtrue;
+	#endif
+
 	// check item spawn functions
 	for ( item=bg_itemlist+1 ; item->classname ; item++ ) {
 		if ( !strcmp(item->classname, ent->classname) ) {
@@ -821,6 +826,10 @@ void G_SpawnEntitiesFromString( void ) {
 	while( G_ParseSpawnVars() ) {
 		G_SpawnGEntityFromSpawnVars();
 	}
+
+	#ifdef SMOKINGUNS
+	G_LoadPowerupEntities();
+	#endif
 
 	level.spawning = qfalse;			// any future calls to G_Spawn*() will be errors
 }

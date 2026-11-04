@@ -55,6 +55,24 @@ They do not replace a live gameplay test.
 For a server-side diagnostic, `g_debugWeapon 2` logs recovered hits as
 `Weapon_Trace: inside-client hit ...`. Restore `g_debugWeapon 0` afterwards.
 
+### Map-specific powerups
+
+Map startup can apply `powerups/<mapname>.txt` overlays after the BSP entities
+have spawned. Existing map spawn points/items can be removed and new spawns,
+money, external models, breakable safes/crates, speakers, box escape triggers,
+and persistent fire can be added. The complete file is validated before existing
+entities are changed. Malformed files leave the original map entities intact.
+
+`g_mapPowerups 0` disables overlays. `powerups_status` reports the selected file,
+entity counts and safe state. `g_mapPowerupsVariant christmastree` selects an
+existing `.txt.christmastree` variant, with a fallback to the normal `.txt` for
+other maps. `g_mapPowerupsGametype 0` explicitly enables deathmatch even on a
+`br_` map; `-1` restores the usual map-prefix selection.
+
+See [MAP-POWERUPS.md](MAP-POWERUPS.md) for supported classes, asset preparation,
+validation, compatibility limits and rollback. This is a new implementation of
+the historical file format; the original Ballerbude extension source was unavailable.
+
 ### Bot hearing and roles
 
 ```cfg
