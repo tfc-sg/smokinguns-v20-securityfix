@@ -27,6 +27,34 @@ security-fix build.
 
 The changes are in `code/game/g_weapon.c` and `code/game/g_active.c`.
 
+### Close-range hit detection
+
+Bullets and shotgun pellets now also check animated hit-model parts when the
+shot starts inside another player's collision box. The engine normally reports
+`startsolid` without an entry hit when the ray exits that box, so these shots
+could skip the target entirely. This affects both human players and bots.
+
+The additional test uses a finite forward segment, chooses the nearest hit part,
+and preserves earlier wall or projectile hits. It excludes the shooter and uses
+the collision position after backward reconciliation. Ordinary traces and bot
+aim accuracy retain their existing behavior. The wall-throw, Gatling duplication,
+and bot hearing/role changes in this repository are retained.
+
+Run the 29 focused regression checks on Linux with:
+
+```sh
+sh tests/run_close_range.sh
+```
+
+The tests compile the production functions with GCC sanitizers and simulate the
+engine trace syscall. They cover overlap, misses inside the bounding box, targets
+behind the muzzle, wall/projectile ordering, parallel and zero-length rays,
+multiple targets, attachment offsets, rotation and reconciled positions.
+They do not replace a live gameplay test.
+
+For a server-side diagnostic, `g_debugWeapon 2` logs recovered hits as
+`Weapon_Trace: inside-client hit ...`. Restore `g_debugWeapon 0` afterwards.
+
 ### Bot hearing and roles
 
 ```cfg

@@ -1442,6 +1442,8 @@ int G_HitModelCheck(hit_data_t *data, vec3_t origin,
 				   vec3_t angles, vec3_t torso_angles, vec3_t head_angles,
 				   lerpFrame_t *torso, lerpFrame_t *legs,
 				   vec3_t start, vec3_t end);
+int G_HitModelCheckSegment(gentity_t *ent, vec3_t start, vec3_t end,
+        float *fraction);
 qboolean G_LoadHitFiles( hit_data_t *hit_data);
 void G_RunLerpFrame( lerpFrame_t *lf, int newAnimation, float speedScale);
 void G_ClearLerpFrame( lerpFrame_t *lf, int animationNumber);
