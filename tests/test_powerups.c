@@ -127,6 +127,16 @@ int main(int argc,char **argv) {
  safe->s.angles[YAW]=90;PU_Bounds(safe,0);
  CHECK(fabs(safe->r.mins[0]+7)<0.01f && fabs(safe->r.maxs[0]-5)<0.01f);
 
+ reset(""); { powerupParser_t blocker = {0};
+ blocker.cursor="{ classname invisible_hurt origin \"10 20 30\" }";blocker.line=1;
+ CHECK(PU_Block(&blocker)==1);
+ safe=&g_entities[MAX_CLIENTS];VectorSet(safe->s.origin,10,20,30);
+ powerupApplying=qtrue;CHECK(G_SpawnPowerupEntity(safe));powerupApplying=qfalse;
+ CHECK(safe->r.linked && safe->r.contents==CONTENTS_SOLID && safe->s.eType==ET_INVISIBLE);
+ CHECK(!(safe->r.svFlags & SVF_NOCLIENT) && !safe->touch);
+ CHECK(safe->r.currentOrigin[2]==30 && safe->r.maxs[2]==8);
+ }
+
  /* Actual safe state callbacks: money and open model follow break/respawn. */
  reset("");level.num_entities=MAX_CLIENTS+4;
  safe=&g_entities[MAX_CLIENTS];money=safe+1;open=safe+2;victim=safe+3;
@@ -139,7 +149,7 @@ int main(int argc,char **argv) {
  CHECK(!G_PowerupItemBlocked(money));CHECK(open->r.linked && money->r.linked);
  G_SpawnPowerupBreakable(safe);
  CHECK(safe->health==100 && safe->takedamage);CHECK(!money->r.linked && !open->r.linked);
- victim->health=100;victim->takedamage=qtrue;safe->damage=10;safe->classname="invisible_hurt";
+ victim->health=100;victim->takedamage=qtrue;safe->damage=10;safe->classname="eternal_fire";
  PU_HurtTouch(safe,victim,NULL);PU_HurtTouch(safe,victim,NULL);
  CHECK(victim->health==90);level.time+=1000;PU_HurtTouch(safe,victim,NULL);CHECK(victim->health==80);
  safe->classname="eternal_fire";PU_FireThink(safe);

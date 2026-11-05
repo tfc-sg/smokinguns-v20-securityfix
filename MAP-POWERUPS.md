@@ -50,8 +50,8 @@ behavior. This override is explicit and independent of the overlay enable switch
   escape touch logic. No inline BSP brush is needed; `model ""` is accepted.
 - `func_flare`: external MD3 with the existing flare protocol and size/color
   parameters, including the Christmas star.
-- `invisible_hurt`: invisible trigger, default bounds -8..8 and default damage
-  10 per second. Explicit bounds and `dmg` override these values.
+- `invisible_hurt`: invisible solid blocker with default bounds -8..8. Set
+  `mins` and `maxs` to size the blocker. Contact causes no damage.
 - `eternal_fire`: persistent trigger, default bounds -24..24, damage 10 per second;
   uses existing client fire events and ignites nearby explosives/flammables.
   Events are refreshed for late joiners and after round-start fire clearing.

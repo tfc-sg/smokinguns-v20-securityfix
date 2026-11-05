@@ -260,7 +260,7 @@ static void PU_HurtTouch(gentity_t *self, gentity_t *other, trace_t *trace) {
     if (!other->takedamage || other->timestamp > level.time) return;
     other->timestamp = level.time + 1000;
     G_Damage(other, self, &g_entities[ENTITYNUM_WORLD], NULL, NULL,
-        self->damage, DAMAGE_NO_KNOCKBACK, !strcmp(self->classname, "eternal_fire") ? MOD_MOLOTOV : MOD_TRIGGER_HURT);
+        self->damage, DAMAGE_NO_KNOCKBACK, MOD_MOLOTOV);
 }
 
 static void PU_FireThink(gentity_t *self) {
@@ -377,17 +377,23 @@ qboolean G_SpawnPowerupEntity(gentity_t *ent) {
         }
         return qtrue;
     }
-    if (!strcmp(name, "invisible_hurt") || !strcmp(name, "eternal_fire")) {
-        PU_Bounds(ent, !strcmp(name, "eternal_fire") ? 24 : 8);
+    if (!strcmp(name, "invisible_hurt")) {
+        PU_Bounds(ent, 8);
+        G_SetOrigin(ent, ent->s.origin);
+        /* Keep this in snapshots so clients predict the collision. */
+        ent->s.eType = ET_INVISIBLE;
+        ent->r.contents = CONTENTS_SOLID;
+        trap_LinkEntity(ent);
+        return qtrue;
+    }
+    if (!strcmp(name, "eternal_fire")) {
+        PU_Bounds(ent, 24);
         ent->damage = ent->damage > 0 ? ent->damage : 10;
         ent->r.contents = CONTENTS_TRIGGER;
         ent->touch = PU_HurtTouch;
-        ent->s.eType = ET_INVISIBLE;
-        if (!strcmp(name, "eternal_fire")) {
-            ent->s.eType = ET_GENERAL;
-            ent->think = PU_FireThink;
-            ent->nextthink = level.time + FRAMETIME;
-        } else ent->r.svFlags |= SVF_NOCLIENT;
+        ent->s.eType = ET_GENERAL;
+        ent->think = PU_FireThink;
+        ent->nextthink = level.time + FRAMETIME;
         trap_LinkEntity(ent);
         return qtrue;
     }
