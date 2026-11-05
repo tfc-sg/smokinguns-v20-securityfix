@@ -114,6 +114,11 @@ vmCvar_t bot_gatling_debug;
 vmCvar_t bot_sniper_tactics;
 vmCvar_t bot_hearing;
 vmCvar_t bot_hearing_wallfire;
+vmCvar_t bot_combat_tactics;
+vmCvar_t bot_throw_interval;
+vmCvar_t bot_throw_chance;
+vmCvar_t bot_aim_pause_ms;
+vmCvar_t bot_aim_pause_interval_ms;
 vmCvar_t bot_developer;
 vmCvar_t bot_interbreedchar;
 vmCvar_t bot_interbreedbots;
@@ -1603,6 +1608,11 @@ int BotAIStartFrame(int time) {
 	trap_Cvar_Update(&bot_sniper_tactics);
 	trap_Cvar_Update(&bot_hearing);
 	trap_Cvar_Update(&bot_hearing_wallfire);
+    trap_Cvar_Update(&bot_combat_tactics);
+    trap_Cvar_Update(&bot_throw_interval);
+    trap_Cvar_Update(&bot_throw_chance);
+    trap_Cvar_Update(&bot_aim_pause_ms);
+    trap_Cvar_Update(&bot_aim_pause_interval_ms);
 	trap_Cvar_Update(&bot_br_buy_dynamite);
 	trap_Cvar_Update(&bot_br_teamplan);
 	trap_Cvar_Update(&bot_br_freeze_defenders);
@@ -1779,6 +1789,16 @@ int BotAIStartFrame(int time) {
 		}
 
 		BotUpdateInput(botstates[i], time, elapsed_time);
+        if (bot_combat_tactics.integer && botstates[i]->ainode == AINode_Battle_Fight &&
+                botstates[i]->combat_pause_until > FloatTime() &&
+                g_entities[i].client->ps.groundEntityNum != ENTITYNUM_NONE &&
+                g_entities[i].health > 0 &&
+                !(botstates[i]->flags & (BFL_AVOID | BFL_ESCAPE | BFL_RELOAD | BFL_RELOAD2))) {
+            botstates[i]->lastucmd.forwardmove = 0;
+            botstates[i]->lastucmd.rightmove = 0;
+            botstates[i]->lastucmd.upmove = 0;
+            botstates[i]->combat_still_commands++;
+        }
 		/*
 		 * BR route debugging: keep Lawmen at their current position while the
 		 * Outlaws continue to buy, navigate and execute the robbery normally.
@@ -1900,6 +1920,11 @@ int BotAISetup( int restart ) {
 	trap_Cvar_Register(&bot_sniper_tactics, "bot_sniper_tactics", "1", 0);
 	trap_Cvar_Register(&bot_hearing, "bot_hearing", "1", 0);
 	trap_Cvar_Register(&bot_hearing_wallfire, "bot_hearing_wallfire", "1", 0);
+    trap_Cvar_Register(&bot_combat_tactics, "bot_combat_tactics", "1", 0);
+    trap_Cvar_Register(&bot_throw_interval, "bot_throw_interval", "12", 0);
+    trap_Cvar_Register(&bot_throw_chance, "bot_throw_chance", "0.20", 0);
+    trap_Cvar_Register(&bot_aim_pause_ms, "bot_aim_pause_ms", "250", 0);
+    trap_Cvar_Register(&bot_aim_pause_interval_ms, "bot_aim_pause_interval_ms", "1500", 0);
 	trap_Cvar_Register(&bot_br_buy_dynamite, "bot_br_buy_dynamite", "1", 0);
 	trap_Cvar_Register(&bot_br_teamplan, "bot_br_teamplan", "3", 0);
 	trap_Cvar_Register(&bot_br_freeze_defenders, "bot_br_freeze_defenders", "0", 0);
@@ -1948,3 +1973,19 @@ int BotAIShutdown( int restart ) {
 	return qtrue;
 }
 
+
+#ifdef SMOKINGUNS
+void Svcmd_BotCombat_f(void) {
+    int i;
+    G_Printf("Bot combat: tactics=%d throw_interval=%.1f chance=%.2f aim_pause_ms=%d pause_interval_ms=%d\n",
+        bot_combat_tactics.integer, bot_throw_interval.value, bot_throw_chance.value,
+        bot_aim_pause_ms.integer, bot_aim_pause_interval_ms.integer);
+    for (i = 0; i < MAX_CLIENTS; i++) {
+        bot_state_t *bs = botstates[i];
+        if (!bs || !bs->inuse) continue;
+        G_Printf("Bot combat: client=%d weapon=%d shots=%d throws=%d pauses=%d still_commands=%d\n",
+            i, bs->weaponnum, bs->combat_shots, bs->combat_throws,
+            bs->combat_pauses, bs->combat_still_commands);
+    }
+}
+#endif

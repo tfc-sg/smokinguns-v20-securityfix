@@ -27,6 +27,61 @@ security-fix build.
 
 The changes are in `code/game/g_weapon.c` and `code/game/g_active.c`.
 
+### Close-range hit detection
+
+Bullets and shotgun pellets now also check animated hit-model parts when the
+shot starts inside another player's collision box. The engine normally reports
+`startsolid` without an entry hit when the ray exits that box, so these shots
+could skip the target entirely. This affects both human players and bots.
+
+The additional test uses a finite forward segment, chooses the nearest hit part,
+and preserves earlier wall or projectile hits. It excludes the shooter and uses
+the collision position after backward reconciliation. Ordinary traces and bot
+aim accuracy retain their existing behavior. The wall-throw, Gatling duplication,
+and bot hearing/role changes in this repository are retained.
+
+Run the 29 focused regression checks on Linux with:
+
+```sh
+sh tests/run_close_range.sh
+```
+
+The tests compile the production functions with GCC sanitizers and simulate the
+engine trace syscall. They cover overlap, misses inside the bounding box, targets
+behind the muzzle, wall/projectile ordering, parallel and zero-length rays,
+multiple targets, attachment offsets, rotation and reconciled positions.
+They do not replace a live gameplay test.
+
+For a server-side diagnostic, `g_debugWeapon 2` logs recovered hits as
+`Weapon_Trace: inside-client hit ...`. Restore `g_debugWeapon 0` afterwards.
+
+### Bot hearing stability
+
+Sound-only leads now select a chase goal without returning a visual enemy-search
+success. This prevents seek/chase/fight cycles when an enemy remains behind a
+wall. Heard goals are checked for reachable areas and consumed on arrival.
+Node-switch recording and dumps are bounded independently of the AI iteration
+budget; exhaustion yields to the next frame with throttled diagnostics.
+Hearing, optional direct-fire suppression, and sniper/Gatling roles remain enabled.
+
+### Map-specific powerups
+
+Map startup can apply `powerups/<mapname>.txt` overlays after the BSP entities
+have spawned. Existing map spawn points/items can be removed and new spawns,
+money, external models, breakable safes/crates, speakers, box escape triggers,
+and persistent fire can be added. The complete file is validated before existing
+entities are changed. Malformed files leave the original map entities intact.
+
+`g_mapPowerups 0` disables overlays. `powerups_status` reports the selected file,
+entity counts and safe state. `g_mapPowerupsVariant christmastree` selects an
+existing `.txt.christmastree` variant, with a fallback to the normal `.txt` for
+other maps. `g_mapPowerupsGametype 0` explicitly enables deathmatch even on a
+`br_` map; `-1` restores the usual map-prefix selection.
+
+See [MAP-POWERUPS.md](MAP-POWERUPS.md) for supported classes, asset preparation,
+validation, compatibility limits and rollback. This is a new implementation of
+the historical file format; the original Ballerbude extension source was unavailable.
+
 ### Bot hearing and roles
 
 ```cfg

@@ -276,6 +276,19 @@ typedef struct bot_state_s
 	int heard_target;
 	float heard_until;
 	vec3_t heard_position;
+    float combat_throw_next;
+    float combat_throw_until;
+    float combat_buy_next;
+    float combat_pause_next;
+    float combat_pause_until;
+    float combat_pause_ready;
+    int combat_throw_weapon;
+    int combat_pause_enemy;
+    int combat_shots;
+    int combat_throws;
+    int combat_pauses;
+    int combat_still_commands;
+
 #endif
 	//
 	int character;									//the bot character
@@ -370,6 +383,12 @@ extern vmCvar_t bot_gatling_debug;
 extern vmCvar_t bot_sniper_tactics;
 extern vmCvar_t bot_hearing;
 extern vmCvar_t bot_hearing_wallfire;
+extern vmCvar_t bot_combat_tactics;
+extern vmCvar_t bot_throw_interval;
+extern vmCvar_t bot_throw_chance;
+extern vmCvar_t bot_aim_pause_ms;
+extern vmCvar_t bot_aim_pause_interval_ms;
+
 extern vmCvar_t bot_br_buy_dynamite;
 extern vmCvar_t bot_br_teamplan;
 extern vmCvar_t bot_br_freeze_defenders;

@@ -1152,6 +1152,16 @@ qboolean	ConsoleCommand( void ) {
 	}
 	
 	// Tequila: New command to add a map entity for testing purpose
+	if (Q_stricmp(cmd, "bot_combat_status") == 0) {
+		Svcmd_BotCombat_f();
+		return qtrue;
+	}
+
+	if (Q_stricmp(cmd, "powerups_status") == 0) {
+		Svcmd_Powerups_f();
+		return qtrue;
+	}
+
 	if (Q_stricmp (cmd, "addentity") == 0) {
 		Svcmd_AddEntity_f();
 		return qtrue;

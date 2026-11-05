@@ -1765,6 +1765,128 @@ int BotChooseBestWeapon(playerState_t *ps, int oldweapon){
 }
 #endif
 
+#ifdef SMOKINGUNS
+static qboolean BotCombatThrow(int weapon) {
+    return weapon == WP_DYNAMITE || weapon == WP_MOLOTOV;
+}
+
+static float BotCombatBound(float value, float minimum, float maximum) {
+    if (Q_isnan(value) || value < minimum) return minimum;
+    if (value > maximum) return maximum;
+    return value;
+}
+
+static int BotCombatGun(playerState_t *ps) {
+    playerState_t filtered = *ps;
+    int weapon;
+    filtered.stats[STAT_WEAPONS] &= ~((1 << WP_DYNAMITE) | (1 << WP_MOLOTOV) | (1 << WP_GATLING));
+    weapon = BotChooseBestWeapon(&filtered, WP_KNIFE);
+    return weapon;
+}
+
+static qboolean BotCombatThrowConditions(bot_state_t *bs, float distance,
+        qboolean visible, float enemySpeed, int nearbyEnemies, qboolean allyNear,
+        int game) {
+    if (game == GT_DUEL || !visible || allyNear || distance < 300 || distance > 850 ||
+            bs->enemy < 0 || bs->enemy >= MAX_CLIENTS || bs->activatestack ||
+            (bs->flags & (BFL_AVOID | BFL_ESCAPE | BFL_RELOAD | BFL_RELOAD2)) ||
+            bs->cur_ps.powerups[PW_GOLD] || bs->cur_ps.groundEntityNum == ENTITYNUM_NONE ||
+            bs->lastframe_health > bs->cur_ps.stats[STAT_HEALTH]) return qfalse;
+    /* Prefer throws at a slow target or a group, never as the ordinary primary. */
+    if (enemySpeed > 180 && nearbyEnemies < 2) return qfalse;
+    return qtrue;
+}
+
+static int BotCombatTacticalThrow(bot_state_t *bs) {
+    aas_entityinfo_t enemy;
+    qboolean visible, allyNear = qfalse;
+    int i, count = 0, weapon = 0;
+    float distance, speed;
+    if (bs->combat_throw_weapon &&
+            (bs->cur_ps.stats[STAT_WEAPONS] & (1 << bs->combat_throw_weapon)) &&
+            bs->cur_ps.ammo[bs->combat_throw_weapon] > 0 &&
+            (bs->combat_throw_until > FloatTime() ||
+             (bs->cur_ps.weapon == bs->combat_throw_weapon && bs->cur_ps.weaponstate == WEAPON_FIRING)))
+        return bs->combat_throw_weapon;
+    bs->combat_throw_weapon = 0;
+    if (bs->combat_throw_next == 0) bs->combat_throw_next = FloatTime() + 6;
+    if (FloatTime() < bs->combat_throw_next || bs->enemy < 0 || bs->enemy >= MAX_CLIENTS)
+        return 0;
+    /* A failed opportunity also consumes this decision window. */
+    bs->combat_throw_next = FloatTime() + BotCombatBound(bot_throw_interval.value, 6, 60);
+    BotEntityInfo(bs->enemy, &enemy);
+    if (!enemy.valid || EntityIsDead(&enemy)) return 0;
+    distance = Distance(bs->origin, enemy.origin);
+    speed = Distance(enemy.origin, enemy.old_origin) / (enemy.update_time > 0.01f ? enemy.update_time : 0.1f);
+    visible = BotEntityVisible(bs->entitynum, bs->eye, bs->viewangles, 360, bs->enemy) > 0.8f;
+    for (i = 0; i < level.maxclients; i++) {
+        if (i == bs->client || level.clients[i].pers.connected != CON_CONNECTED || g_entities[i].health <= 0)
+            continue;
+        if (Distance(g_entities[i].r.currentOrigin, enemy.origin) > 320) continue;
+        if (BotSameTeam(bs, i)) allyNear = qtrue;
+        else count++;
+    }
+    if (!BotCombatThrowConditions(bs, distance, visible, speed, count, allyNear, g_gametype.integer)) return 0;
+    if (random() >= BotCombatBound(bot_throw_chance.value, 0, 0.5f)) return 0;
+    if ((bs->cur_ps.stats[STAT_WEAPONS] & (1 << WP_MOLOTOV)) && bs->cur_ps.ammo[WP_MOLOTOV] > 0)
+        weapon = WP_MOLOTOV;
+    else if (g_gametype.integer != GT_BR &&
+            (bs->cur_ps.stats[STAT_WEAPONS] & (1 << WP_DYNAMITE)) && bs->cur_ps.ammo[WP_DYNAMITE] > 0)
+        weapon = WP_DYNAMITE;
+    if (weapon) {
+        bs->combat_throw_weapon = weapon;
+        bs->combat_throw_until = FloatTime() + 3.5f;
+    }
+    return weapon;
+}
+
+static qboolean BotCombatPause(bot_state_t *bs, float distance, qboolean visible,
+        float now, float duration, float interval) {
+    int weapon = bs->cur_ps.weapon;
+    if (!visible || distance < 220 || distance > 1800 || bs->enemy < 0 || bs->enemy >= MAX_CLIENTS ||
+            bs->cur_ps.groundEntityNum == ENTITYNUM_NONE || bs->activatestack ||
+            bs->cur_ps.powerups[PW_GOLD] || weapon <= WP_KNIFE || (weapon >= WP_GATLING && weapon != WP_AKIMBO) ||
+            (weapon != bs->weaponnum && !(bs->weaponnum == WP_AKIMBO &&
+             weapon >= WP_REM58 && weapon <= WP_PEACEMAKER)) || bs->cur_ps.weaponstate == WEAPON_RAISING ||
+            bs->cur_ps.weaponstate == WEAPON_DROPPING || bs->cur_ps.weaponstate == WEAPON_RELOADING ||
+            bs->cur_ps.torsoAnim == BOTH_LADDER || bs->cur_ps.torsoAnim == BOTH_LADDER_STAND ||
+            (bs->flags & (BFL_AVOID | BFL_ESCAPE | BFL_RELOAD | BFL_RELOAD2)) ||
+            bs->lastframe_health > bs->cur_ps.stats[STAT_HEALTH]) {
+        bs->combat_pause_until = 0;
+        return qfalse;
+    }
+    if (bs->combat_pause_enemy != bs->enemy) {
+        bs->combat_pause_enemy = bs->enemy;
+        bs->combat_pause_until = 0;
+        bs->combat_pause_next = now + 0.2f;
+    }
+    if (bs->combat_pause_until > now) return qtrue;
+    if (bs->combat_pause_next > now) return qfalse;
+    duration = BotCombatBound(duration, 0.1f, 0.5f);
+    bs->combat_pause_until = now + duration;
+    bs->combat_pause_ready = now + duration * 0.45f;
+    bs->combat_pause_next = now + duration + BotCombatBound(interval, 0.8f, 4);
+    bs->combat_pauses++;
+    return qtrue;
+}
+
+void BotCombatWeaponFired(int client, int weapon) {
+    bot_state_t *bs = BotAI_GetBotState(client);
+    if (!bs || !bs->inuse) return;
+    if (BotCombatThrow(weapon)) {
+        bs->combat_throws++;
+        bs->combat_throw_until = 0;
+        bs->combat_throw_weapon = 0;
+        bs->combat_throw_next = FloatTime() + BotCombatBound(bot_throw_interval.value, 6, 60);
+    } else if (weapon > WP_KNIFE && weapon < WP_DYNAMITE) {
+        bs->combat_shots++;
+        if (bs->combat_pause_until > FloatTime()) {
+            bs->combat_pause_until = 0;
+        }
+    }
+}
+#endif
+
 /*
 ==================
 BotChooseWeapon
@@ -1781,7 +1903,11 @@ void BotChooseWeapon(bot_state_t *bs) {
 		bs->cmdweapon = bs->weaponnum;
 	} else {
 #ifdef SMOKINGUNS
-		if (BotGatlingRole(bs) && BotHasUsableGatling(bs) &&
+        if (bot_combat_tactics.integer && bs->activatestack &&
+                bs->activatestack->weapon == WP_DYNAMITE &&
+                (bs->cur_ps.stats[STAT_WEAPONS] & (1 << WP_DYNAMITE)) && bs->cur_ps.ammo[WP_DYNAMITE] > 0)
+            newweaponnum = WP_DYNAMITE;
+        else if (BotGatlingRole(bs) && BotHasUsableGatling(bs) &&
 			(bs->cur_ps.stats[STAT_GATLING_MODE] ||
 			 (bs->gatling_hold_until > FloatTime() && bs->enemy >= 0)))
 			newweaponnum = WP_GATLING;
@@ -1802,7 +1928,10 @@ void BotChooseWeapon(bot_state_t *bs) {
 				weaponps.stats[STAT_WEAPONS] &= ~(1 << WP_DYNAMITE);
 				weaponps.ammo[WP_DYNAMITE] = 0;
 			}
-			newweaponnum = BotChooseBestWeapon(&weaponps, bs->weaponnum);
+            if (bot_combat_tactics.integer) {
+                newweaponnum = BotCombatTacticalThrow(bs);
+                if (!newweaponnum) newweaponnum = BotCombatGun(&weaponps);
+            } else newweaponnum = BotChooseBestWeapon(&weaponps, bs->weaponnum);
 #else
 			newweaponnum = BotChooseBestWeapon(&bs->cur_ps, bs->weaponnum);
 #endif
@@ -3224,6 +3353,7 @@ bot_moveresult_t BotAttackMove(bot_state_t *bs, int tfl) {
 	bot_goal_t goal;
     qboolean goback = qtrue;
 
+	memset(&moveresult, 0, sizeof(moveresult));
 	attackentity = bs->enemy;
 	//get the enemy entity info
 	BotEntityInfo(attackentity, &entinfo);
@@ -3235,6 +3365,13 @@ bot_moveresult_t BotAttackMove(bot_state_t *bs, int tfl) {
 #ifdef SMOKINGUNS
 	if (BotGatlingAttackMove(bs, &entinfo, dist, tfl, &moveresult))
 		return moveresult;
+#endif
+
+#ifdef SMOKINGUNS
+    if (bot_combat_tactics.integer && BotCombatPause(bs, dist,
+            BotEntityVisible(bs->entitynum, bs->eye, bs->viewangles, 360, bs->enemy) > 0.8f,
+            FloatTime(), bot_aim_pause_ms.value / 1000, bot_aim_pause_interval_ms.value / 1000))
+        return moveresult;
 #endif
 
 	//if the bot uses a gatling
@@ -3930,18 +4067,7 @@ int BotFindEnemy(bot_state_t *bs, int curenemy) {
 	}
 #endif
 
-#ifdef SMOKINGUNS
-	/* A recent sound is a lead to investigate, not direct visual knowledge. */
-	if (curenemy < 0 && bs->heard_until > FloatTime() &&
-		bs->heard_target >= 0 && bs->heard_target < MAX_CLIENTS &&
-		!BotSameTeam(bs, bs->heard_target)) {
-		bs->enemy = bs->heard_target;
-		bs->enemysight_time = FloatTime() - 2.0f;
-		bs->enemyvisible_time = FloatTime();
-		AIEnter_Battle_Chase(bs, "heard enemy: investigate sound");
-		return qtrue;
-	}
-#endif
+
 	return qfalse;
 }
 
@@ -4545,6 +4671,7 @@ void BotCheckBuy(bot_state_t *bs){
 	qboolean bought = qfalse;
 	qboolean gatlingRole, gatlingBought = qfalse;
 	qboolean sniperRole, sniperBought = qfalse;
+    qboolean throwSupply = qfalse;
 	
 
 	if(g_gametype.integer >= GT_RTP){
@@ -4569,6 +4696,10 @@ void BotCheckBuy(bot_state_t *bs){
 	money = bs->cur_ps.stats[STAT_MONEY];
 	gatlingRole = BotGatlingRole(bs);
 	sniperRole = BotSniperRole(bs);
+    if (bot_combat_tactics.integer && FloatTime() >= bs->combat_buy_next) {
+        bs->combat_buy_next = FloatTime() + 2 * BotCombatBound(bot_throw_interval.value, 6, 60);
+        throwSupply = random() < BotCombatBound(bot_throw_chance.value, 0, 0.5f);
+    }
 	bs->flags &= ~BFL_ESCAPE;
 	bs->flags &= ~BFL_AVOID;
 
@@ -4715,6 +4846,13 @@ void BotCheckBuy(bot_state_t *bs){
 		if(item->prize == 0 || item->weapon_sort != WS_MISC)
 			continue;
 
+        if (bot_combat_tactics.integer && (item->giType == IT_WEAPON || item->giType == IT_AMMO) &&
+                BotCombatThrow(item->giTag)) {
+            if (!throwSupply || money - item->prize < 10 ||
+                    bs->cur_ps.ammo[WP_DYNAMITE] > 0 || bs->cur_ps.ammo[WP_MOLOTOV] > 0)
+                continue;
+        }
+
 		// don't buy WP_MOLOTOV, WP_DYNAMITE, WP_KNIFE
 		//if(random()>0.90 && item->giTag == WP_MOLOTOV)
 		//	continue;
@@ -4859,6 +4997,8 @@ void BotCheckAttack(bot_state_t *bs) {
 		return;
 #endif
 
+    if (bot_combat_tactics.integer && bs->combat_pause_until > FloatTime() &&
+            bs->combat_pause_ready > FloatTime()) return;
 	attackentity = bs->enemy;
 #ifdef SMOKINGUNS
 	heardTarget = bot_hearing_wallfire.integer &&
@@ -6433,6 +6573,9 @@ void BotCheckEvents(bot_state_t *bs, entityState_t *state) {
 	bsp_trace_t soundTrace;
 #endif
 
+	/* Validate snapshot numbers before indexing either entity array. */
+	if (!bs || !state || state->number < 0 || state->number >= MAX_GENTITIES) return;
+
 	//NOTE: this sucks, we're accessing the gentity_t directly
 	//but there's no other fast way to do it right now
 	if (bs->entityeventTime[state->number] == g_entities[state->number].eventTime) {
@@ -7050,11 +7193,21 @@ void BotDeathmatchAI(bot_state_t *bs, float thinktime) {
 	if (!bs->inuse) return;
 	//if the bot executed too many AI nodes
 	if (i >= MAX_NODESWITCHES) {
-		trap_BotDumpGoalStack(bs->gs);
-		trap_BotDumpAvoidGoals(bs->gs);
-		BotDumpNodeSwitches(bs);
-		ClientName(bs->client, name, sizeof(name));
-		BotAI_Print(PRT_ERROR, "%s at %1.1f switched more than %d AI nodes\n", name, FloatTime(), MAX_NODESWITCHES);
+        static float nextWarning[MAX_CLIENTS];
+        if (FloatTime() >= nextWarning[bs->client]) {
+            trap_BotDumpGoalStack(bs->gs);
+            trap_BotDumpAvoidGoals(bs->gs);
+            BotDumpNodeSwitches(bs);
+            ClientName(bs->client, name, sizeof(name));
+            BotAI_Print(PRT_ERROR, "%s at %1.1f switched more than %d AI nodes\n", name, FloatTime(), MAX_NODESWITCHES);
+            nextWarning[bs->client] = FloatTime() + 5;
+        }
+#ifdef SMOKINGUNS
+        bs->heard_until = 0;
+#endif
+        bs->enemy = -1;
+        bs->ltg_time = 0;
+        AIEnter_Seek_LTG(bs, "BotDeathmatchAI: node budget recovery");
 	}
 	//
 	bs->lastframe_health = bs->inventory[INVENTORY_HEALTH];

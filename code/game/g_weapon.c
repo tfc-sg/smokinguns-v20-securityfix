@@ -53,7 +53,61 @@ static void Weapon_Trace_ResetDebug(int passEntityNum) {
 	traceNumber = 0;
 }
 
-static int Weapon_Trace( trace_t *results, const vec3_t start, const vec3_t end, int passEntityNum ) {
+/* Recover model hits skipped by the engine's start-inside/exit trace case.
+ * Keep the original trace as the upper bound, including walls and missiles. */
+static void Weapon_TraceInsideClients(trace_t *results, vec3_t start,
+        vec3_t end, int passEntityNum, int *modelLocation) {
+
+    trace_t solid;
+    gentity_t *candidate;
+    vec3_t delta;
+    float fraction;
+    int i, axis, location;
+
+    if (!results->startsolid || results->allsolid || results->fraction <= 0)
+        return;
+    /* A start inside world geometry must not become a hit through a wall. */
+    trap_Trace(&solid, start, NULL, NULL, end, ENTITYNUM_NONE, CONTENTS_SOLID);
+    if (solid.startsolid || solid.allsolid)
+        return;
+
+    for (i = 0; i < level.maxclients; i++) {
+        candidate = &g_entities[i];
+        if (i == skipNumber || i == passEntityNum || !candidate->inuse ||
+                !candidate->r.linked || !candidate->client ||
+                !candidate->takedamage || !(candidate->r.contents & CONTENTS_BODY))
+            continue;
+        for (axis = 0; axis < 3; axis++) {
+            if (start[axis] <= candidate->r.currentOrigin[axis] + candidate->r.mins[axis] ||
+                    start[axis] >= candidate->r.currentOrigin[axis] + candidate->r.maxs[axis])
+                break;
+        }
+        if (axis != 3)
+            continue;
+        fraction = results->fraction;
+        location = G_HitModelCheckSegment(candidate, start, end, &fraction);
+        if (location < 0)
+            continue;
+        VectorSubtract(end, start, delta);
+        results->fraction = fraction;
+        VectorMA(start, fraction, delta, results->endpos);
+        VectorNormalize(delta);
+        VectorNegate(delta, results->plane.normal);
+        results->plane.dist = DotProduct(results->plane.normal, results->endpos);
+        results->plane.type = PLANE_NON_AXIAL;
+        SetPlaneSignbits(&results->plane);
+        results->entityNum = i;
+        results->contents = candidate->r.contents;
+        results->surfaceFlags = 0;
+        *modelLocation = location;
+    }
+    if (*modelLocation >= 0 && g_debugWeapon.integer > 1)
+        G_Printf("Weapon_Trace: inside-client hit shooter=%d target=%d location=%d fraction=%f\n",
+            skipNumber, results->entityNum, *modelLocation, results->fraction);
+}
+
+static int Weapon_Trace( trace_t *results, const vec3_t start, const vec3_t end,
+        int passEntityNum, int *modelLocation ) {
 	int shaderNum;
 	gentity_t *tent;
 	vec3_t origin;
@@ -61,6 +115,13 @@ static int Weapon_Trace( trace_t *results, const vec3_t start, const vec3_t end,
 
 	// Here is the real trace
 	trap_Trace(results, start, NULL, NULL, end, passEntityNum, MASK_SHOT);
+
+    if (modelLocation) {
+        vec3_t segmentEnd;
+        *modelLocation = -1;
+        VectorCopy(end, segmentEnd);
+        Weapon_TraceInsideClients(results, origin, segmentEnd, passEntityNum, modelLocation);
+    }
 
 	// don't debug weapon trace if not debugging weapon
 	if (g_debugWeapon.integer) {
@@ -275,7 +336,7 @@ qboolean CheckKnifeAttack( gentity_t *ent ) {
 		// do another trace
 		CalcMuzzlePoint ( ent, forward, right, up, muzzle );
 		VectorMA (muzzle, 32, forward, end);
-		shaderNum = Weapon_Trace( &tr, muzzle, end, ent->s.number );
+		shaderNum = Weapon_Trace( &tr, muzzle, end, ent->s.number, NULL );
 
 		traceEnt = &g_entities[ tr.entityNum ];
 
@@ -328,7 +389,7 @@ wall:
 
 		if(tr.contents & CONTENTS_SOLID && traceEnt->s.eType == ET_BREAKABLE &&
 			!(traceEnt->flags & FL_BREAKABLE_INIT)){
-			shaderNum = Weapon_Trace( &tr, muzzle, end, ent->s.number );
+			shaderNum = Weapon_Trace( &tr, muzzle, end, ent->s.number, NULL );
 
 			if(tr.entityNum == traceEnt->s.number){
 				G_BreakablePrepare(traceEnt, shaderNum);
@@ -640,7 +701,7 @@ void Bullet_Fire (gentity_t *ent, float spread, float damage, const int weapon )
 pistolfire:
 	shootthru = qfalse;
 
-	shaderNum = Weapon_Trace(&tr, muzzle, end, passent);
+	shaderNum = Weapon_Trace(&tr, muzzle, end, passent, &location);
 
 	//check if water was hit
 	// check done in cgame now G_WaterWasHit(muzzle, end, passent);
@@ -685,7 +746,7 @@ pistolfire:
 			gclient_t	*client = traceEnt->client;
 			int count = 0;
 
-			location = G_HitModelCheck(&hit_data, traceEnt->s.pos.trBase,
+			if (location < 0) location = G_HitModelCheck(&hit_data, traceEnt->s.pos.trBase,
 				client->legs_angles, client->torso_angles, client->ps.viewangles,
 				&client->torso, &client->legs, muzzle, tr.endpos);
 
@@ -709,7 +770,7 @@ pistolfire:
 				}
 
 				//do another trace
-				shaderNum = Weapon_Trace(&tr, tr.endpos, end, tr.entityNum);
+				shaderNum = Weapon_Trace(&tr, tr.endpos, end, tr.entityNum, &location);
 
 				ent->base_damage = damage ; // Keep current base damage
 				damage = Modify_BulletDamage(damage, weapon, ent->r.currentOrigin, tr.endpos);
@@ -741,7 +802,7 @@ pistolfire:
 
 				client = traceEnt->client;
 
-				location = G_HitModelCheck(&hit_data, traceEnt->s.pos.trBase,
+				if (location < 0) location = G_HitModelCheck(&hit_data, traceEnt->s.pos.trBase,
 					client->legs_angles, client->torso_angles, client->ps.viewangles,
 					&client->torso, &client->legs, muzzle, tr.endpos);
 			}
@@ -946,6 +1007,7 @@ qboolean ShotgunPellet( vec3_t start, vec3_t end, gentity_t *ent) {
 	vec3_t		tr_start, tr_end, tr_dir;
 	int			shaderNum;
 	int			shootcount = 0;
+	int location;
 
 	passent = ENTITYNUM_NONE; // you should be able to shoot your own missile
 	VectorCopy( start, tr_start );
@@ -961,7 +1023,7 @@ qboolean ShotgunPellet( vec3_t start, vec3_t end, gentity_t *ent) {
 shotgunfire:
 	shootthru = qfalse;
 
-	shaderNum = Weapon_Trace(&tr, tr_start, tr_end, passent);
+	shaderNum = Weapon_Trace(&tr, tr_start, tr_end, passent, &location);
 
 	// Tequila: Really don't shoot ourself
 	if ( tr.entityNum == ent->s.number ) {
@@ -986,7 +1048,6 @@ shotgunfire:
 	}
 
 	if ( traceEnt->takedamage) {
-		int location;
 		gclient_t *client = traceEnt->client;
 		float	olddamage = damage;
 
@@ -1007,7 +1068,7 @@ shotgunfire:
 			int i;
 			int count = 0;
 
-			location = G_HitModelCheck(&hit_data, traceEnt->s.pos.trBase,
+			if (location < 0) location = G_HitModelCheck(&hit_data, traceEnt->s.pos.trBase,
 				client->legs_angles, client->torso_angles, client->ps.viewangles,
 				&client->torso, &client->legs, muzzle, tr.endpos);
 
@@ -1031,7 +1092,7 @@ shotgunfire:
 
 //				G_LogPrintf("shooting through a player\n");
 
-				shaderNum = Weapon_Trace(&tr, tr.endpos, tr_end, tr.entityNum);
+				shaderNum = Weapon_Trace(&tr, tr.endpos, tr_end, tr.entityNum, &location);
 
 				ent->base_damage = damage;
 				damage = Modify_BulletDamage(damage, ent->client->ps.weapon, ent->r.currentOrigin, tr.endpos);
@@ -1065,7 +1126,7 @@ shotgunfire:
 
 				client = traceEnt->client;
 
-				location = G_HitModelCheck(&hit_data, traceEnt->s.pos.trBase,
+				if (location < 0) location = G_HitModelCheck(&hit_data, traceEnt->s.pos.trBase,
 					client->legs_angles, client->torso_angles, client->ps.viewangles,
 					&client->torso, &client->legs, muzzle, tr.endpos);
 			}
@@ -1438,6 +1499,7 @@ void weapon_dynamite_fire (gentity_t *ent) {
 	}
 
 	fire_dynamite (ent, muzzle, forward, 700);
+    BotCombatWeaponFired(ent->s.number, WP_DYNAMITE);
 }
 
 /*
@@ -1456,6 +1518,7 @@ void weapon_molotov_fire (gentity_t *ent) {
 	}
 
 	fire_molotov (ent, muzzle, forward, 700);
+    BotCombatWeaponFired(ent->s.number, WP_MOLOTOV);
 }
 #endif
 
@@ -1943,6 +2006,8 @@ void FireWeapon( gentity_t *ent ) {
 void FireWeapon( gentity_t *ent, qboolean altfire, int weapon ) {
 	float spread = bg_weaponlist[weapon].spread;
 	float damage = bg_weaponlist[weapon].damage;
+
+    if (weapon > WP_KNIFE && weapon < WP_DYNAMITE) BotCombatWeaponFired(ent->s.number, weapon);
 
 	if(ent->client->movestate & MS_WALK){
 		spread *= 1.4f;

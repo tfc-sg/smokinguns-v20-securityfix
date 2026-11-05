@@ -541,6 +541,97 @@ int G_HitModelCheck(hit_data_t *data, vec3_t origin,
 	return -1;
 }
 
+/* A finite forward segment against an animated, capped elliptical hit part.
+ * This is used only when the shot starts inside a client's collision box.
+ * Unlike SmallestDistance, it also handles parallel and zero-length rays. */
+static qboolean HitSegmentPart(vec3_t origin, vec3_t angles,
+        hit_part_t *mesh, lerpFrame_t *lerp, vec3_t start, vec3_t end,
+        float *fraction) {
+    vec3_t dir, axis, rayStart, base, edge1, edge2, delta, offset;
+    float radius1 = mesh->header.a1 * MD3_SCALE;
+    float radius2 = mesh->header.a2 * MD3_SCALE;
+    float length = mesh->header.length * MD3_SCALE;
+    float lo = 0, hi = *fraction;
+    float z, dz, x, y, dx, dy, a, b, c, disc, t0, t1, swap;
+
+    if (radius1 <= 0 || radius2 <= 0 || length <= 0)
+        return qfalse;
+    SetupLines(origin, angles, start, end, mesh, lerp,
+        dir, axis, rayStart, base, edge1, edge2);
+    VectorSubtract(end, start, delta);
+    if (VectorLengthSquared(delta) == 0)
+        return qfalse;
+    VectorSubtract(start, base, offset);
+
+    /* Intersect the two cap half-spaces. Parameters remain in [0, 1]. */
+    z = DotProduct(offset, axis);
+    dz = DotProduct(delta, axis);
+    if (fabs(dz) < 0.000001f) {
+        if (z < 0 || z > length)
+            return qfalse;
+    } else {
+        t0 = -z / dz;
+        t1 = (length - z) / dz;
+        if (t0 > t1) { swap = t0; t0 = t1; t1 = swap; }
+        if (t0 > lo) lo = t0;
+        if (t1 < hi) hi = t1;
+    }
+
+    x = DotProduct(offset, edge1) / radius2;
+    y = DotProduct(offset, edge2) / radius1;
+    dx = DotProduct(delta, edge1) / radius2;
+    dy = DotProduct(delta, edge2) / radius1;
+    a = dx*dx + dy*dy;
+    b = x*dx + y*dy;
+    c = x*x + y*y - 1;
+    if (a < 0.000000000001f) {
+        if (c > 0)
+            return qfalse;
+    } else {
+        disc = b*b - a*c;
+        if (disc < 0)
+            return qfalse;
+        disc = sqrt(disc);
+        t0 = (-b - disc) / a;
+        t1 = (-b + disc) / a;
+        if (t0 > lo) lo = t0;
+        if (t1 < hi) hi = t1;
+    }
+    if (lo > hi || lo >= *fraction)
+        return qfalse;
+    *fraction = lo;
+    return qtrue;
+}
+
+int G_HitModelCheckSegment(gentity_t *ent, vec3_t start, vec3_t end,
+        float *fraction) {
+    gclient_t *client = ent->client;
+    vec3_t origin, angles;
+    lerpFrame_t *lerp;
+    int i, location = -1;
+
+    for (i = 0; i < NUM_HIT_LOCATIONS; i++) {
+        /* The collision box may have been moved by backward reconciliation. */
+        VectorCopy(ent->r.currentOrigin, origin);
+        VectorCopy(client->legs_angles, angles);
+        lerp = &client->legs;
+        if (hit_info[i].hit_part != PART_LOWER) {
+            TagOffset(origin, angles, hit_data.tag_torso, &client->legs);
+            VectorAdd(angles, client->torso_angles, angles);
+            lerp = &client->torso;
+            if (hit_info[i].hit_part == PART_HEAD) {
+                TagOffset(origin, angles, hit_data.tag_head, &client->torso);
+                VectorCopy(client->ps.viewangles, angles);
+                lerp = NULL;
+            }
+        }
+        if (HitSegmentPart(origin, angles, &hit_data.meshes[i], lerp,
+                start, end, fraction))
+            location = i;
+    }
+    return location;
+}
+
 /*
 ==================
 PARSEHITFILECODE

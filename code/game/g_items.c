@@ -470,6 +470,15 @@ RespawnItem
 */
 void RespawnItem( gentity_t *ent ) {
 	// randomly select from teamed entities
+#ifdef SMOKINGUNS
+    if (G_PowerupItemBlocked(ent)) {
+        ent->s.eFlags |= EF_NODRAW;
+        ent->r.contents = 0;
+        trap_UnlinkEntity(ent);
+        return;
+    }
+#endif
+
 	if (ent->team) {
 		gentity_t	*master;
 		int	count;
@@ -1001,8 +1010,12 @@ void FinishSpawningItem( gentity_t *ent ) {
 	}
 #endif
 
-	// team slaves and targeted items aren't present at start
-	if ( ( ent->flags & FL_TEAMSLAVE ) || ent->targetname ) {
+	// Team slaves, targeted items and money inside closed safes stay hidden.
+	if ( ( ent->flags & FL_TEAMSLAVE ) || ent->targetname
+#ifdef SMOKINGUNS
+        || G_PowerupItemBlocked(ent)
+#endif
+        ) {
 		ent->s.eFlags |= EF_NODRAW;
 		ent->r.contents = 0;
 		return;
