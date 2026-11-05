@@ -1455,6 +1455,8 @@ qboolean G_SpawnPowerupEntity(gentity_t *ent);
 void G_SpawnPowerupBreakable(gentity_t *ent);
 qboolean G_PowerupItemBlocked(gentity_t *ent);
 void Svcmd_Powerups_f(void);
+void Svcmd_BotCombat_f(void);
+void BotCombatWeaponFired(int client, int weapon);
 qboolean G_LoadHitFiles( hit_data_t *hit_data);
 void G_RunLerpFrame( lerpFrame_t *lf, int newAnimation, float speedScale);
 void G_ClearLerpFrame( lerpFrame_t *lf, int animationNumber);

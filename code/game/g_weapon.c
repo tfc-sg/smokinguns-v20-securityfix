@@ -1499,6 +1499,7 @@ void weapon_dynamite_fire (gentity_t *ent) {
 	}
 
 	fire_dynamite (ent, muzzle, forward, 700);
+    BotCombatWeaponFired(ent->s.number, WP_DYNAMITE);
 }
 
 /*
@@ -1517,6 +1518,7 @@ void weapon_molotov_fire (gentity_t *ent) {
 	}
 
 	fire_molotov (ent, muzzle, forward, 700);
+    BotCombatWeaponFired(ent->s.number, WP_MOLOTOV);
 }
 #endif
 
@@ -2004,6 +2006,8 @@ void FireWeapon( gentity_t *ent ) {
 void FireWeapon( gentity_t *ent, qboolean altfire, int weapon ) {
 	float spread = bg_weaponlist[weapon].spread;
 	float damage = bg_weaponlist[weapon].damage;
+
+    if (weapon > WP_KNIFE && weapon < WP_DYNAMITE) BotCombatWeaponFired(ent->s.number, weapon);
 
 	if(ent->client->movestate & MS_WALK){
 		spread *= 1.4f;
